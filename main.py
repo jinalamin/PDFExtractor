@@ -1,65 +1,13 @@
-# import pdfplumber
-# import openai
-
-# openai.api_key = "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"
-
-# def extract_from_machine_pdf(pdf_path):
-#     extracted_text = ""
-#     extracted_tables = []
-
-#     with pdfplumber.open(pdf_path) as pdf:
-#         for page in pdf.pages:
-#             text = page.extract_text()
-#             if text:
-#                 extracted_text += text + "\n"
-#             tables = page.extract_tables()
-#             if tables:
-#                 extracted_tables.extend(tables)
-#     return extracted_text.strip(), extracted_tables
-
-
-# def extract_pdf_contents(pdf_path):
-#     print(f"📄 Reading PDF: {pdf_path}")
-#     text, tables = extract_from_machine_pdf(pdf_path)
-
-#     print("\n--- Extracted Text ---\n")
-#     print(text)
-
-#     print("\n--- Text Chunks (for LLM input) ---")
-#     chunks = chunk_text(text, chunk_size=1000, overlap=200)
-#     for i, chunk in enumerate(chunks):
-#         print(f"\n--- Chunk {i + 1} ---\n{chunk}")
-    
-#     print("\n--- Extracted Tables ---")
-#     for i, table in enumerate(tables):
-#         print(f"\nTable {i + 1}:")
-#         for row in table:
-#             print(row)
-
-# def chunk_text(text, chunk_size=1000, overlap=200):
-#     """
-#     Splits text into overlapping chunks.
-#     - chunk_size: number of characters per chunk
-#     - overlap: number of characters to overlap between chunks
-#     """
-#     chunks = []
-#     start = 0
-#     while start < len(text):
-#         end = min(start + chunk_size, len(text))
-#         chunks.append(text[start:end].strip())
-#         start += chunk_size - overlap
-#     return chunks
-
-# if __name__ == "__main__":
-#     pdf_path = "document.pdf"
-#     # pdf_path = "sample-new-fidelity-acnt-stmt.pdf"
-#     extract_pdf_contents(pdf_path)
-
 import pdfplumber
 from openai import OpenAI
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
 
 client = OpenAI()
-client.api_key = "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"  # Replace with your key
+client.api_key = os.getenv("OPENAI_API_KEY")  # Fetch API key from .env file
 
 def extract_from_machine_pdf(pdf_path):
     extracted_text = ""
