@@ -1,4 +1,65 @@
+# import pdfplumber
+# import openai
+
+# openai.api_key = "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"
+
+# def extract_from_machine_pdf(pdf_path):
+#     extracted_text = ""
+#     extracted_tables = []
+
+#     with pdfplumber.open(pdf_path) as pdf:
+#         for page in pdf.pages:
+#             text = page.extract_text()
+#             if text:
+#                 extracted_text += text + "\n"
+#             tables = page.extract_tables()
+#             if tables:
+#                 extracted_tables.extend(tables)
+#     return extracted_text.strip(), extracted_tables
+
+
+# def extract_pdf_contents(pdf_path):
+#     print(f"📄 Reading PDF: {pdf_path}")
+#     text, tables = extract_from_machine_pdf(pdf_path)
+
+#     print("\n--- Extracted Text ---\n")
+#     print(text)
+
+#     print("\n--- Text Chunks (for LLM input) ---")
+#     chunks = chunk_text(text, chunk_size=1000, overlap=200)
+#     for i, chunk in enumerate(chunks):
+#         print(f"\n--- Chunk {i + 1} ---\n{chunk}")
+    
+#     print("\n--- Extracted Tables ---")
+#     for i, table in enumerate(tables):
+#         print(f"\nTable {i + 1}:")
+#         for row in table:
+#             print(row)
+
+# def chunk_text(text, chunk_size=1000, overlap=200):
+#     """
+#     Splits text into overlapping chunks.
+#     - chunk_size: number of characters per chunk
+#     - overlap: number of characters to overlap between chunks
+#     """
+#     chunks = []
+#     start = 0
+#     while start < len(text):
+#         end = min(start + chunk_size, len(text))
+#         chunks.append(text[start:end].strip())
+#         start += chunk_size - overlap
+#     return chunks
+
+# if __name__ == "__main__":
+#     pdf_path = "document.pdf"
+#     # pdf_path = "sample-new-fidelity-acnt-stmt.pdf"
+#     extract_pdf_contents(pdf_path)
+
 import pdfplumber
+from openai import OpenAI
+
+client = OpenAI()
+client.api_key = "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"  # Replace with your key
 
 def extract_from_machine_pdf(pdf_path):
     extracted_text = ""
@@ -14,22 +75,55 @@ def extract_from_machine_pdf(pdf_path):
                 extracted_tables.extend(tables)
     return extracted_text.strip(), extracted_tables
 
+def chunk_text(text, chunk_size=1000, overlap=200):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunks.append(text[start:end].strip())
+        start += chunk_size - overlap
+    return chunks
 
-def extract_pdf_contents(pdf_path):
+def summarize_chunk(chunk, model="gpt-3.5- turbo", temperature=0.2):
+    prompt = f"Summarize the following section of a brokerage statement in detail:\n\n{chunk}"
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+    )
+    return response.choices[0].message.content.strip()
+
+def summarize_pdf(pdf_path):
     print(f"📄 Reading PDF: {pdf_path}")
     text, tables = extract_from_machine_pdf(pdf_path)
 
-    print("\n--- Extracted Text ---\n")
-    print(text)
+    chunks = chunk_text(text, chunk_size=1000, overlap=200)
 
-    print("\n--- Extracted Tables ---")
-    for i, table in enumerate(tables):
-        print(f"\nTable {i + 1}:")
-        for row in table:
-            print(row)
+    print(f"\n✂️ Summarizing {len(chunks)} chunks...\n")
+    chunk_summaries = []
+    for i, chunk in enumerate(chunks):
+        print(f"🔹 Summarizing chunk {i + 1}/{len(chunks)}")
+        summary = summarize_chunk(chunk)
+        print(f"Summary {i + 1}: {summary}\n")
+        chunk_summaries.append(summary)
 
+    print("🧠 Generating overall summary...")
+    overall_prompt = (
+        "Based on the following summaries of parts of a brokerage statement, provide a concise but detailed overall summary. Make sure not to include any redundant information, and summarize the details of investor's portfolio value, transactions, income, asset allocation, and holdings:\n\n"
+        + "\n\n".join(f"Chunk {i+1} summary: {s}" for i, s in enumerate(chunk_summaries))
+    )
+    overall_response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": overall_prompt}],
+        temperature=0.2,
+    )
+    overall_summary = overall_response.choices[0].message.content.strip()
+    
+    print("\n✅ Final Summary:\n")
+    print(overall_summary)
+    return overall_summary
 
 if __name__ == "__main__":
-    #pdf_path = "sample_statement.pdf"
-    pdf_path = "sample-new-fidelity-acnt-stmt.pdf"
-    extract_pdf_contents(pdf_path)
+    # pdf_path = "sample-new-fidelity-acnt-stmt.pdf"
+    pdf_path = "document.pdf"
+    summarize_pdf(pdf_path)
