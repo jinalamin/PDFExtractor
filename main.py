@@ -28,6 +28,8 @@ def extract_pdf_contents(pdf_path):
         for row in table:
             print(row)
 
+    return text
+
 
 if __name__ == "__main__":
     #pdf_path = "sample_statement.pdf"
