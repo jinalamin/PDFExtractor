@@ -4,6 +4,13 @@ import os
 import tempfile
 from processor import process_file
 
+# Set the page configuration
+st.set_page_config(
+    page_title="Brokerage Statement Summary",  # Tab name
+    page_icon="📄",  # Optional: Tab icon
+    layout="centered",  # Optional: Layout of the app
+    initial_sidebar_state="auto"  # Optional: Sidebar state
+)
 def main():
     st.title("Brokerage Statement Summary")
     st.write("Upload a file to process its contents")
