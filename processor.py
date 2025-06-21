@@ -6,11 +6,32 @@ from openai import OpenAI
 import tempfile
 import os
 from dotenv import load_dotenv
+import boto3
+from botocore.exceptions import ClientError
+import json
 
 load_dotenv()
 # Initialize OpenAI client
-client = OpenAI()
-client.api_key = os.getenv("OPENAI_API_KEY")
+# client = OpenAI()
+# client.api_key = os.getenv("OPENAI_API_KEY")
+
+def get_bedrock_client():
+    """Initialize AWS Bedrock client"""
+    try:
+        # Get region from environment or use default
+        region = os.getenv("AWS_BEDROCK_REGION", os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+        
+        bedrock_client = boto3.client(
+            'bedrock-runtime',
+            region_name=region,
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+        )
+        return bedrock_client
+    except Exception as e:
+        raise ValueError(f"Failed to initialize Bedrock client: {str(e)}")
+
+client = get_bedrock_client()
 
 def clean_extracted_text(text):
     """Clean and improve extracted text from PDF"""
@@ -128,8 +149,66 @@ def clean_ai_response(response_text):
     
     return response_text.strip()
 
-def summarize_section(section_name: str, content: Any, llm_client):
-    """Summarize a specific section with context-aware prompts"""
+def call_llama_bedrock(prompt, system_prompt="", model_arn=None):
+    """Call AWS Bedrock Llama model with given prompt"""
+    
+    # Get model ARN from environment or use provided one
+    if model_arn is None:
+        model_arn = os.getenv("BEDROCK_MODEL_ID")
+        if not model_arn:
+            return "Error: BEDROCK_MODEL_ID not set in environment variables"
+    
+    # Validate that it's a Llama model
+    if "llama" not in model_arn.lower():
+        return f"Error: Expected Llama model, got {model_arn}"
+    
+    try:
+        # Construct Llama 3 format prompt
+        if system_prompt:
+            formatted_prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+        else:
+            formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+        
+        # Prepare request body for Llama
+        body = {
+            "prompt": formatted_prompt,
+            "max_gen_len": 300,
+            "temperature": 0.3,
+            "top_p": 0.9
+        }
+        
+        # Call Bedrock
+        response = client.invoke_model(
+            modelId=model_arn,
+            body=json.dumps(body),
+            contentType="application/json"
+        )
+        
+        # Parse response
+        response_body = json.loads(response['body'].read())
+        
+        # Extract text from Llama response
+        generated_text = response_body.get('generation', '')
+        
+        if generated_text:
+            return generated_text.strip()
+        else:
+            return "No response generated"
+            
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'ValidationException' and 'inference profile' in str(e):
+            return f"Error: Model {model_arn} requires inference profile setup. Please use the correct inference profile ARN from your Bedrock console."
+        elif error_code == 'AccessDeniedException':
+            return f"Error: Access denied to model {model_arn}. Please check model access permissions in Bedrock console."
+        else:
+            return f"AWS Bedrock error: {str(e)}"
+    except Exception as e:
+        return f"Error calling Bedrock: {str(e)}"
+
+    
+def summarize_section(section_name: str, content: Any, bedrock_client):
+    """Summarize a specific section using AWS Bedrock"""
     
     # Convert content to string if it's a table
     if isinstance(content, list) and len(content) > 0:
@@ -140,10 +219,10 @@ def summarize_section(section_name: str, content: Any, llm_client):
     else:
         content_str = str(content)
     
-    # Clean the content before sending to LLM
+    # Clean the content before sending to AI
     content_str = clean_extracted_text(content_str)
     
-    # Truncate content if too long (OpenAI has token limits)
+    # Truncate content if too long (Bedrock has token limits)
     if len(content_str) > 3000:
         content_str = content_str[:3000] + "... (truncated)"
     
@@ -160,24 +239,71 @@ def summarize_section(section_name: str, content: Any, llm_client):
     }
     
     prompt = prompts.get(section_name, "Summarize this brokerage statement section. Use plain text only, no formatting:")
+    full_prompt = f"{prompt}\n\n{content_str}"
+    
+    system_prompt = "You are a financial analyst summarizing brokerage statements. Be concise and focus on key numbers and insights. Use plain text only with no markdown, asterisks, or special formatting. Ensure proper spacing around numbers and currency amounts."
     
     try:
-        response = llm_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a financial analyst summarizing brokerage statements. Be concise and focus on key numbers and insights. Use plain text only with no markdown, asterisks, or special formatting. Ensure proper spacing around numbers and currency amounts."},
-                {"role": "user", "content": f"{prompt}\n\n{content_str}"}
-            ],
-            max_tokens=300,
-            temperature=0.3  # Lower temperature for more consistent formatting
-        )
+        # Call Bedrock instead of OpenAI
+        response_text = call_llama_bedrock(full_prompt, system_prompt)
         
         # Clean the AI response
-        clean_response = clean_ai_response(response.choices[0].message.content)
+        clean_response = clean_ai_response(response_text)
         return clean_response
     
     except Exception as e:
         return f"Error generating summary: {str(e)}"
+
+# def summarize_section(section_name: str, content: Any, llm_client):
+#     """Summarize a specific section with context-aware prompts"""
+    
+#     # Convert content to string if it's a table
+#     if isinstance(content, list) and len(content) > 0:
+#         if isinstance(content[0], list):  # It's a table
+#             content_str = '\n'.join(['\t'.join([str(cell) if cell else '' for cell in row]) for row in content])
+#         else:  # It's a list of lines
+#             content_str = '\n'.join(content)
+#     else:
+#         content_str = str(content)
+    
+#     # Clean the content before sending to LLM
+#     content_str = clean_extracted_text(content_str)
+    
+#     # Truncate content if too long (OpenAI has token limits)
+#     if len(content_str) > 3000:
+#         content_str = content_str[:3000] + "... (truncated)"
+    
+#     # Context-specific prompts
+#     prompts = {
+#         'dividends': "Summarize this dividend information including total dividends received, companies that paid dividends, and dates. Use plain text only, no formatting:",
+#         'dividend_table': "Summarize this dividend table including total dividends received, companies that paid dividends, and dates. Use plain text only, no formatting:",
+#         'transactions': "Summarize these transactions including number of trades, most active securities, and net buying/selling activity. Use plain text only, no formatting:",
+#         'transactions_table': "Summarize this transactions table including number of trades, most active securities, and net buying/selling activity. Use plain text only, no formatting:",
+#         'positions': "Summarize the portfolio positions including largest holdings, sector allocation, and total portfolio value. Use plain text only, no formatting:",
+#         'positions_table': "Summarize this positions table including largest holdings, sector allocation, and total portfolio value. Use plain text only, no formatting:",
+#         'fees': "Summarize all fees and charges including total costs and types of fees. Use plain text only, no formatting:",
+#         'performance': "Summarize the performance metrics including gains/losses and returns. Use plain text only, no formatting:"
+#     }
+    
+#     prompt = prompts.get(section_name, "Summarize this brokerage statement section. Use plain text only, no formatting:")
+    
+#     try:
+#         response = llm_client.chat.completions.create(
+#             model="gpt-4o-mini",
+#             messages=[
+#                 {"role": "system", "content": "You are a financial analyst summarizing brokerage statements. Be concise and focus on key numbers and insights. Use plain text only with no markdown, asterisks, or special formatting. Ensure proper spacing around numbers and currency amounts."},
+#                 {"role": "user", "content": f"{prompt}\n\n{content_str}"}
+#             ],
+#             max_tokens=300,
+#             temperature=0.3  # Lower temperature for more consistent formatting
+#         )
+        
+#         # Clean the AI response
+#         clean_response = clean_ai_response(response.choices[0].message.content)
+#         return clean_response
+    
+#     except Exception as e:
+#         return f"Error generating summary: {str(e)}"
 
 def process_brokerage_statement(pdf_path, llm_client):
     # Extract sections
