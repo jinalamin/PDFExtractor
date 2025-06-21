@@ -4,6 +4,8 @@ from PIL import Image
 import io
 import os
 
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
 def extract_images_from_pdf(pdf_path, output_folder):
     doc = fitz.open(pdf_path)
     image_paths = []
