@@ -36,7 +36,6 @@ def display_pdf_summaries(summaries):
         # Single section, display directly
         for section, data in summaries.items():
             st.write(f"### {data['Section']}")
-            st.write(f"**Original Length:** {data['Original Length']}")
             st.write("**Summary:**")
             # Use st.text() instead of st.write() for plain text display
             st.text(data['Summary'])
@@ -85,13 +84,32 @@ def main():
                     if uploaded_file.type == "application/pdf":
                         # PDF processing with summaries
                         if isinstance(output, dict):
+                            # Get overall and section summaries for display
+                            overall_summary = None
+                            section_summaries = []
+                            
+                            sorted_output = sorted(output.items(), key=lambda x: x[1].get('Priority', 999))
+                            for section_key, data in sorted_output:
+                                if section_key == 'overall_summary':
+                                    overall_summary = data
+                                else:
+                                    section_summaries.append((section_key, data))
+                            
                             display_pdf_summaries(output)
                             
                             # Add download option for summaries
                             summary_text = ""
-                            for section, data in output.items():
-                                if "error" not in section:
-                                    summary_text += f"{data['Section']}\n"
+                            
+                            # Add overall summary first
+                            if overall_summary:
+                                summary_text += "OVERALL SUMMARY\n"
+                                summary_text += "=" * 50 + "\n"
+                                summary_text += f"{overall_summary['Summary']}\n\n"
+                            
+                            # Add section summaries
+                            for section_key, data in section_summaries:
+                                if "error" not in section_key.lower():
+                                    summary_text += f"{data['Section'].upper()}\n"
                                     summary_text += "=" * len(data['Section']) + "\n"
                                     summary_text += f"{data['Summary']}\n\n"
                             

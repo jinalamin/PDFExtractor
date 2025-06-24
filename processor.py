@@ -1,20 +1,18 @@
 import PyPDF2
 import pdfplumber
 import re
+import json
 from typing import List, Dict, Any
-from openai import OpenAI
 import tempfile
 import os
 from dotenv import load_dotenv
 import boto3
 from botocore.exceptions import ClientError
-import json
 
+# Load environment variables from .env file
 load_dotenv()
-# Initialize OpenAI client
-# client = OpenAI()
-# client.api_key = os.getenv("OPENAI_API_KEY")
 
+# Initialize AWS Bedrock client
 def get_bedrock_client():
     """Initialize AWS Bedrock client"""
     try:
@@ -94,41 +92,79 @@ def extract_pdf_with_structure(pdf_path):
     return sections
 
 def extract_tables_and_sections(pdf_path):
-    sections = {}
+    """Extract content and organize by logical sections instead of pages"""
+    sections = {
+        'dividends': [],
+        'transactions': [],
+        'positions': [],
+        'fees': [],
+        'performance': [],
+        'account_summary': [],
+        'other': []
+    }
+    
+    all_text = ""  # Collect all text for overall summary
     
     try:
         with pdfplumber.open(pdf_path) as pdf:
             for page_num, page in enumerate(pdf.pages):
-                # Extract tables
+                # Extract tables and categorize them
                 tables = page.extract_tables()
                 
                 for i, table in enumerate(tables):
-                    # Identify table type based on headers
                     if table and table[0]:  # Check if table has headers
                         headers = [str(cell).lower() if cell else '' for cell in table[0]]
                         
-                        if any('dividend' in h for h in headers):
-                            section_name = 'dividend_table'
-                        elif any('symbol' in h and 'qty' in h for h in headers):
-                            section_name = 'positions_table'
-                        elif any('trade' in h or 'buy' in h or 'sell' in h for h in headers):
-                            section_name = 'transactions_table'
+                        # Categorize table based on headers
+                        if any('dividend' in h or 'distribution' in h for h in headers):
+                            sections['dividends'].append(table)
+                        elif any(('symbol' in h and 'qty' in h) or 'position' in h for h in headers):
+                            sections['positions'].append(table)
+                        elif any('trade' in h or 'buy' in h or 'sell' in h or 'transaction' in h for h in headers):
+                            sections['transactions'].append(table)
+                        elif any('fee' in h or 'charge' in h or 'commission' in h for h in headers):
+                            sections['fees'].append(table)
                         else:
-                            section_name = f'table_{page_num}_{i}'
-                        
-                        sections[section_name] = table
+                            sections['other'].append(table)
                 
-                # Extract remaining text (non-tabular)
+                # Extract and categorize text
                 text = page.extract_text()
                 if text:
-                    # Clean the text before storing
                     cleaned_text = clean_extracted_text(text)
-                    sections[f'text_page_{page_num}'] = cleaned_text
+                    all_text += cleaned_text + "\n"
+                    
+                    # Categorize text by content
+                    lines = cleaned_text.split('\n')
+                    current_section = 'other'
+                    
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        
+                        # Identify section based on content
+                        line_lower = line.lower()
+                        if any(keyword in line_lower for keyword in ['dividend', 'distribution', 'reinvestment']):
+                            current_section = 'dividends'
+                        elif any(keyword in line_lower for keyword in ['trade', 'transaction', 'buy', 'sell', 'purchase']):
+                            current_section = 'transactions'
+                        elif any(keyword in line_lower for keyword in ['position', 'holding', 'shares', 'quantity', 'portfolio']):
+                            current_section = 'positions'
+                        elif any(keyword in line_lower for keyword in ['fee', 'charge', 'commission', 'expense']):
+                            current_section = 'fees'
+                        elif any(keyword in line_lower for keyword in ['gain', 'loss', 'return', 'performance', 'change']):
+                            current_section = 'performance'
+                        elif any(keyword in line_lower for keyword in ['account summary', 'portfolio value', 'total value', 'balance']):
+                            current_section = 'account_summary'
+                        
+                        sections[current_section].append(line)
     
     except Exception as e:
         print(f"Error extracting tables and sections: {e}")
-        # Fallback to basic text extraction
-        sections = {'error': f"Could not extract structured data: {e}"}
+        return {'error': f"Could not extract structured data: {e}"}
+    
+    # Add overall text for summary
+    sections['overall_text'] = all_text
     
     return sections
 
@@ -163,18 +199,18 @@ def call_llama_bedrock(prompt, system_prompt="", model_arn=None):
         return f"Error: Expected Llama model, got {model_arn}"
     
     try:
-        # Construct Llama 3 format prompt
+        # Construct Llama 3 format prompt with clear instructions
         if system_prompt:
-            formatted_prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+            formatted_prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
         else:
-            formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+            formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
         
-        # Prepare request body for Llama
+        # Prepare request body for Llama with increased token limit
         body = {
             "prompt": formatted_prompt,
-            "max_gen_len": 300,
-            "temperature": 0.3,
-            "top_p": 0.9
+            "max_gen_len": 400,  # Increased from 300
+            "temperature": 0.1,  # Lower temperature for more focused responses
+            "top_p": 0.7        # Slightly lower for more focused responses
         }
         
         # Call Bedrock
@@ -191,7 +227,28 @@ def call_llama_bedrock(prompt, system_prompt="", model_arn=None):
         generated_text = response_body.get('generation', '')
         
         if generated_text:
-            return generated_text.strip()
+            # Clean up the response
+            clean_text = generated_text.strip()
+            
+            # Remove any leading '>' characters
+            while clean_text.startswith('>'):
+                clean_text = clean_text[1:].strip()
+            
+            # Remove any trailing incomplete sentences if text was truncated
+            if len(clean_text) > 10:
+                # If text doesn't end with proper punctuation and seems truncated
+                if not clean_text.endswith(('.', '!', '?', ':')) and len(clean_text) > 500:
+                    # Find the last complete sentence
+                    last_period = clean_text.rfind('.')
+                    last_exclamation = clean_text.rfind('!')
+                    last_question = clean_text.rfind('?')
+                    
+                    last_punct = max(last_period, last_exclamation, last_question)
+                    
+                    if last_punct > len(clean_text) * 0.7:  # If we have at least 70% of the text
+                        clean_text = clean_text[:last_punct + 1]
+            
+            return clean_text
         else:
             return "No response generated"
             
@@ -206,129 +263,158 @@ def call_llama_bedrock(prompt, system_prompt="", model_arn=None):
     except Exception as e:
         return f"Error calling Bedrock: {str(e)}"
 
-    
 def summarize_section(section_name: str, content: Any, bedrock_client):
-    """Summarize a specific section using AWS Bedrock"""
+    """Summarize a specific section using AWS Bedrock Llama model"""
     
-    # Convert content to string if it's a table
-    if isinstance(content, list) and len(content) > 0:
-        if isinstance(content[0], list):  # It's a table
-            content_str = '\n'.join(['\t'.join([str(cell) if cell else '' for cell in row]) for row in content])
-        else:  # It's a list of lines
-            content_str = '\n'.join(content)
+    # Convert content to string based on type
+    if isinstance(content, list):
+        if len(content) > 0 and isinstance(content[0], list):  # It's a list of tables
+            content_str = ""
+            for table in content:
+                table_str = '\n'.join(['\t'.join([str(cell) if cell else '' for cell in row]) for row in table])
+                content_str += table_str + "\n\n"
+        else:  # It's a list of text lines
+            content_str = '\n'.join(str(item) for item in content if item)
     else:
         content_str = str(content)
     
     # Clean the content before sending to AI
     content_str = clean_extracted_text(content_str)
     
-    # Truncate content if too long (Bedrock has token limits)
-    if len(content_str) > 3000:
-        content_str = content_str[:3000] + "... (truncated)"
+    # Skip if content is too short or empty
+    if len(content_str.strip()) < 20:
+        return f"No meaningful {section_name} data found"
     
-    # Context-specific prompts
+    # Truncate content if too long (Bedrock has token limits)
+    if len(content_str) > 4000:
+        content_str = content_str[:4000] + "... (truncated)"
+    
+    # Context-specific prompts with clearer instructions
     prompts = {
-        'dividends': "Summarize this dividend information including total dividends received, companies that paid dividends, and dates. Use plain text only, no formatting:",
-        'dividend_table': "Summarize this dividend table including total dividends received, companies that paid dividends, and dates. Use plain text only, no formatting:",
-        'transactions': "Summarize these transactions including number of trades, most active securities, and net buying/selling activity. Use plain text only, no formatting:",
-        'transactions_table': "Summarize this transactions table including number of trades, most active securities, and net buying/selling activity. Use plain text only, no formatting:",
-        'positions': "Summarize the portfolio positions including largest holdings, sector allocation, and total portfolio value. Use plain text only, no formatting:",
-        'positions_table': "Summarize this positions table including largest holdings, sector allocation, and total portfolio value. Use plain text only, no formatting:",
-        'fees': "Summarize all fees and charges including total costs and types of fees. Use plain text only, no formatting:",
-        'performance': "Summarize the performance metrics including gains/losses and returns. Use plain text only, no formatting:"
+        'overall_summary': """Analyze this complete brokerage statement and provide a comprehensive summary. Include:
+1. Total portfolio value and period-over-period change
+2. Key account balances 
+3. Major transactions or activity
+4. Income/dividends received
+5. Notable performance highlights
+Write in clear, complete sentences without using quotation marks or special formatting:""",
+        
+        'dividends': """Analyze the dividend and distribution information. Summarize:
+1. Total dividends/distributions received
+2. Companies that paid dividends
+3. Payment dates and amounts
+Write in clear, complete sentences:""",
+        
+        'transactions': """Analyze the trading activity. Summarize:
+1. Number of trades executed
+2. Most active securities traded
+3. Buy vs sell activity
+4. Total transaction volume
+Write in clear, complete sentences:""",
+        
+        'positions': """Analyze the portfolio positions. Summarize:
+1. Largest holdings by value
+2. Asset allocation breakdown
+3. Total portfolio value
+4. Any significant position changes
+Write in clear, complete sentences:""",
+        
+        'fees': """Analyze all fees and charges. Summarize:
+1. Total fees paid during the period
+2. Types of fees (management, transaction, etc.)
+3. Any changes in fee structure
+Write in clear, complete sentences:""",
+        
+        'performance': """Analyze the performance metrics. Summarize:
+1. Investment gains or losses
+2. Portfolio returns
+3. Performance highlights
+4. Year-to-date performance
+Write in clear, complete sentences:""",
+        
+        'account_summary': """Analyze the account overview. Summarize:
+1. Account balances by type
+2. Key metrics and totals
+3. Important account information
+Write in clear, complete sentences:""",
+        
+        'other': """Analyze this additional information from the brokerage statement. Summarize the key points in clear, complete sentences:"""
     }
     
-    prompt = prompts.get(section_name, "Summarize this brokerage statement section. Use plain text only, no formatting:")
-    full_prompt = f"{prompt}\n\n{content_str}"
+    prompt = prompts.get(section_name, f"Analyze and summarize this {section_name} information from the brokerage statement in clear, complete sentences:")
+    full_prompt = f"{prompt}\n\nData to analyze:\n{content_str}"
     
-    system_prompt = "You are a financial analyst summarizing brokerage statements. Be concise and focus on key numbers and insights. Use plain text only with no markdown, asterisks, or special formatting. Ensure proper spacing around numbers and currency amounts."
+    system_prompt = """You are a professional financial analyst. Provide clear, concise summaries of brokerage statement sections. 
+
+IMPORTANT RULES:
+- Write in complete sentences that end with periods
+- Do NOT use quotation marks, asterisks, or special formatting
+- Do NOT start responses with '>' or other symbols
+- Focus on key numbers, amounts, and insights
+- Ensure proper spacing around currency amounts
+- Keep responses complete and well-structured"""
     
     try:
-        # Call Bedrock instead of OpenAI
+        # Call Llama via Bedrock
         response_text = call_llama_bedrock(full_prompt, system_prompt)
         
-        # Clean the AI response
+        # Additional cleaning of AI response
         clean_response = clean_ai_response(response_text)
+        
+        # Remove any remaining formatting artifacts
+        clean_response = re.sub(r'^[>\-\*\+\s]*', '', clean_response)  # Remove leading symbols
+        clean_response = re.sub(r'\s+', ' ', clean_response)  # Normalize spaces
+        clean_response = clean_response.strip()
+        
         return clean_response
     
     except Exception as e:
         return f"Error generating summary: {str(e)}"
 
-# def summarize_section(section_name: str, content: Any, llm_client):
-#     """Summarize a specific section with context-aware prompts"""
-    
-#     # Convert content to string if it's a table
-#     if isinstance(content, list) and len(content) > 0:
-#         if isinstance(content[0], list):  # It's a table
-#             content_str = '\n'.join(['\t'.join([str(cell) if cell else '' for cell in row]) for row in content])
-#         else:  # It's a list of lines
-#             content_str = '\n'.join(content)
-#     else:
-#         content_str = str(content)
-    
-#     # Clean the content before sending to LLM
-#     content_str = clean_extracted_text(content_str)
-    
-#     # Truncate content if too long (OpenAI has token limits)
-#     if len(content_str) > 3000:
-#         content_str = content_str[:3000] + "... (truncated)"
-    
-#     # Context-specific prompts
-#     prompts = {
-#         'dividends': "Summarize this dividend information including total dividends received, companies that paid dividends, and dates. Use plain text only, no formatting:",
-#         'dividend_table': "Summarize this dividend table including total dividends received, companies that paid dividends, and dates. Use plain text only, no formatting:",
-#         'transactions': "Summarize these transactions including number of trades, most active securities, and net buying/selling activity. Use plain text only, no formatting:",
-#         'transactions_table': "Summarize this transactions table including number of trades, most active securities, and net buying/selling activity. Use plain text only, no formatting:",
-#         'positions': "Summarize the portfolio positions including largest holdings, sector allocation, and total portfolio value. Use plain text only, no formatting:",
-#         'positions_table': "Summarize this positions table including largest holdings, sector allocation, and total portfolio value. Use plain text only, no formatting:",
-#         'fees': "Summarize all fees and charges including total costs and types of fees. Use plain text only, no formatting:",
-#         'performance': "Summarize the performance metrics including gains/losses and returns. Use plain text only, no formatting:"
-#     }
-    
-#     prompt = prompts.get(section_name, "Summarize this brokerage statement section. Use plain text only, no formatting:")
-    
-#     try:
-#         response = llm_client.chat.completions.create(
-#             model="gpt-4o-mini",
-#             messages=[
-#                 {"role": "system", "content": "You are a financial analyst summarizing brokerage statements. Be concise and focus on key numbers and insights. Use plain text only with no markdown, asterisks, or special formatting. Ensure proper spacing around numbers and currency amounts."},
-#                 {"role": "user", "content": f"{prompt}\n\n{content_str}"}
-#             ],
-#             max_tokens=300,
-#             temperature=0.3  # Lower temperature for more consistent formatting
-#         )
-        
-#         # Clean the AI response
-#         clean_response = clean_ai_response(response.choices[0].message.content)
-#         return clean_response
-    
-#     except Exception as e:
-#         return f"Error generating summary: {str(e)}"
-
-def process_brokerage_statement(pdf_path, llm_client):
-    # Extract sections
+def process_brokerage_statement(pdf_path, bedrock_client):
+    # Extract sections organized by content type
     sections = extract_tables_and_sections(pdf_path)
     
-    # Clean and filter sections
-    meaningful_sections = {}
-    for name, content in sections.items():
-        if isinstance(content, str) and len(content.strip()) > 50:
-            meaningful_sections[name] = content
-        elif isinstance(content, list) and len(content) > 1:
-            meaningful_sections[name] = content
+    if 'error' in sections:
+        return sections
     
-    # Summarize each section
+    # Generate overall summary first
+    overall_text = sections.get('overall_text', '')
     summaries = {}
-    for section_name, content in meaningful_sections.items():
+    
+    if overall_text and len(overall_text.strip()) > 100:
         try:
-            summary = summarize_section(section_name, content, llm_client)
+            overall_summary = summarize_section('overall_summary', overall_text, bedrock_client)
+            summaries['overall_summary'] = {
+                'summary': overall_summary
+            }
+        except Exception as e:
+            summaries['overall_summary'] = {
+                'summary': f"Error generating overall summary: {e}"
+            }
+    
+    # Process each section (excluding overall_text and empty sections)
+    section_order = ['dividends', 'transactions', 'positions', 'fees', 'performance', 'account_summary', 'other']
+    
+    for section_name in section_order:
+        content = sections.get(section_name, [])
+        
+        # Skip empty sections
+        if not content:
+            continue
+            
+        # Skip if content is too minimal
+        content_str = str(content)
+        if len(content_str.strip()) < 50:
+            continue
+        
+        try:
+            summary = summarize_section(section_name, content, bedrock_client)
             summaries[section_name] = {
-                'original_length': len(str(content)),
                 'summary': summary
             }
         except Exception as e:
             summaries[section_name] = {
-                'original_length': len(str(content)),
                 'summary': f"Error summarizing {section_name}: {e}"
             }
     
@@ -347,18 +433,42 @@ def process_file(uploaded_file):
             tmp_file_path = tmp_file.name
         
         try:
-            # Process the PDF and get summaries
+            # Process the PDF and get summaries using Bedrock Llama
             summaries = process_brokerage_statement(tmp_file_path, client)
             
             # Format the output for display
             if summaries:
                 formatted_output = {}
-                for section, data in summaries.items():
-                    formatted_output[section] = {
-                        'Section': section.replace('_', ' ').title(),
-                        'Original Length': f"{data['original_length']} characters",
-                        'Summary': data['summary']
+                
+                # Format overall summary first
+                if 'overall_summary' in summaries:
+                    formatted_output['overall_summary'] = {
+                        'Section': 'Overall Summary',
+                        'Summary': summaries['overall_summary']['summary'],
+                        'Priority': 0  # For ordering
                     }
+                
+                # Format section-wise summaries
+                section_titles = {
+                    'dividends': 'Dividends & Distributions',
+                    'transactions': 'Trading Activity',
+                    'positions': 'Portfolio Positions',
+                    'fees': 'Fees & Charges',
+                    'performance': 'Performance Metrics',
+                    'account_summary': 'Account Summary',
+                    'other': 'Other Information'
+                }
+                
+                priority = 1
+                for section_key, data in summaries.items():
+                    if section_key != 'overall_summary':
+                        formatted_output[section_key] = {
+                            'Section': section_titles.get(section_key, section_key.replace('_', ' ').title()),
+                            'Summary': data['summary'],
+                            'Priority': priority
+                        }
+                        priority += 1
+                
                 return formatted_output
             else:
                 return {"error": "No meaningful sections found in the PDF"}
