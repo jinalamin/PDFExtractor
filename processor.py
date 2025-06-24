@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 import io
 
@@ -27,18 +28,22 @@ def process_file(uploaded_file):
         else:
             return f"Unsupported file type: {file_type}. Please upload a TXT or PDF file."
 
-        lines = content.split('\n')
-        words = content.split()
-        stats = f"""
-File Statistics:
-- Lines: {len(lines)}
-- Words: {len(words)}
-- Characters: {len(content)}
+        #preview = content[:500] + ('...' if len(content) > 500 else '')
+        preview = content
+        allContent = content
+        lines = allContent.split('\n')
+        words = allContent.split()
+        stats = {
+            'lines': len(lines),
+            'words': len(words),
+            'characters': len(allContent)
+        }
+        st.markdown('<div class="file-details-title">File Statistics:</div>', unsafe_allow_html=True)
+        for key, value in stats.items():
+            st.markdown(f'<li style="margin-bottom:0.1rem;"><span class="file-detail-key">{key.capitalize()}</span>: <span class="file-detail-value">{value}</span></li>', unsafe_allow_html=True)
+        st.markdown('</ul>', unsafe_allow_html=True)
 
-Content Preview:
-{content[:500]}{'...' if len(content) > 500 else ''}
-            """
-        return stats
+        return preview
             
     except Exception as e:
         return f"Error processing file: {str(e)}"
