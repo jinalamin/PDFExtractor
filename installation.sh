@@ -2,7 +2,7 @@
 
 # 1. Pull a zip file from S3 location
 echo "Downloading app-source.zip from S3..."
-aws s3 cp s3://source-code-stradit/brokerage-summary/app-source.zip app-source.zip
+aws s3 cp s3://source-code-stradit/brokerage-summary/PDFExtractor-master.zip app-source.zip
 
 # 2. Install Python if it doesn't exist
 if ! command -v python3 &> /dev/null; then
