@@ -33,8 +33,8 @@ pip install -r requirements.txt || true
 if pgrep -f "streamlit run app.py" > /dev/null; then
     echo "Restarting Streamlit..."
     pkill -f "streamlit run app.py"
-    streamlit run app.py
+    nohup streamlit run app.py --server.port=8501 --server.address=0.0.0.0 > streamlit.log 2>&1 &
 else
     echo "Starting Streamlit..."
-    streamlit run app.py
+    nohup streamlit run app.py --server.port=8501 --server.address=0.0.0.0 > streamlit.log 2>&1 &
 fi
