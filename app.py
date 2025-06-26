@@ -16,16 +16,16 @@ st.set_page_config(
 def display_pdf_summaries(summaries):
     """Display PDF summaries in a nice format"""
     st.subheader("📊 Brokerage Statement Summary")
-    
+
     if "error" in summaries:
         st.error(summaries["error"])
         return
-    
+
     # Create tabs for better organization
     section_names = list(summaries.keys())
     if len(section_names) > 1:
         tabs = st.tabs([summaries[section]['Section'] for section in section_names])
-        
+
         for i, section in enumerate(section_names):
             with tabs[i]:
                 data = summaries[section]
@@ -41,9 +41,31 @@ def display_pdf_summaries(summaries):
             st.text(data['Summary'])
 
 def main():
+    logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+    if os.path.exists(logo_path):
+        import base64
+        from io import BytesIO
+        from PIL import Image as PILImage
+        try:
+            with open(logo_path, "rb") as image_file:
+                img = PILImage.open(image_file)
+                buffered = BytesIO()
+                img.save(buffered, format="PNG")
+                encoded = base64.b64encode(buffered.getvalue()).decode()
+            img_mime = "image/png"
+        except Exception:
+            with open(logo_path, "rb") as image_file:
+                encoded = base64.b64encode(image_file.read()).decode()
+            img_mime = "image/jpeg"
+        st.markdown(
+            f'<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 0.15rem;">'
+            f'<img src="data:{img_mime};base64,{encoded}" width="150" style="border-radius: 14px; background: transparent;" alt="Logo">'
+            '</div>',
+            unsafe_allow_html=True
+        )
     st.title("📄 Brokerage Statement Summary")
     st.write("Upload a PDF brokerage statement to get an AI-powered summary of key sections")
-    
+
     # Add some styling
     st.markdown("""
     <style>
@@ -53,33 +75,31 @@ def main():
     }
     </style>
     """, unsafe_allow_html=True)
-    
+
     # File uploader with expanded file type support
     uploaded_file = st.file_uploader(
-        "Choose a file", 
+        "Choose a file",
         type=["txt", "pdf"],
         help="Upload a PDF brokerage statement or text file for processing"
     )
 
     if uploaded_file is not None:
-        # Display file details in an expandable section
-        with st.expander("📋 File Details", expanded=False):
-            file_details = {
-                "Filename": uploaded_file.name,
-                "File type": uploaded_file.type,
-                "File size": f"{uploaded_file.size:,} bytes ({uploaded_file.size/1024:.1f} KB)"
-            }
-            
-            for key, value in file_details.items():
-                st.write(f"**{key}:** {value}")
-        
+        st.markdown('<div class="file-details-title">File Details:</div>', unsafe_allow_html=True)
+        file_details = {
+            "Filename": uploaded_file.name,
+            "File type": uploaded_file.type,
+            "File size": f"{uploaded_file.size} bytes"
+        }
+        for key, value in file_details.items():
+            st.markdown(f'<li style="margin-bottom:0.1rem;"><span class="file-detail-key">{key.capitalize()}</span>: <span class="file-detail-value">{value}</span></li>', unsafe_allow_html=True)
+        st.markdown('</ul>', unsafe_allow_html=True)
         # Process button
         if st.button("🚀 Process File", type="primary"):
             with st.spinner('🔄 Processing file... This may take a moment for PDF files.'):
                 try:
                     # Call the processing function from processor.py
                     output = process_file(uploaded_file)
-                    
+
                     # Display the output based on file type
                     if uploaded_file.type == "application/pdf":
                         # PDF processing with summaries
@@ -87,32 +107,32 @@ def main():
                             # Get overall and section summaries for display
                             overall_summary = None
                             section_summaries = []
-                            
+
                             sorted_output = sorted(output.items(), key=lambda x: x[1].get('Priority', 999))
                             for section_key, data in sorted_output:
                                 if section_key == 'overall_summary':
                                     overall_summary = data
                                 else:
                                     section_summaries.append((section_key, data))
-                            
+
                             display_pdf_summaries(output)
-                            
+
                             # Add download option for summaries
                             summary_text = ""
-                            
+
                             # Add overall summary first
                             if overall_summary:
                                 summary_text += "OVERALL SUMMARY\n"
                                 summary_text += "=" * 50 + "\n"
                                 summary_text += f"{overall_summary['Summary']}\n\n"
-                            
+
                             # Add section summaries
                             for section_key, data in section_summaries:
                                 if "error" not in section_key.lower():
                                     summary_text += f"{data['Section'].upper()}\n"
                                     summary_text += "=" * len(data['Section']) + "\n"
                                     summary_text += f"{data['Summary']}\n\n"
-                            
+
                             if summary_text:
                                 st.download_button(
                                     label="💾 Download Summary as Text",
@@ -122,12 +142,12 @@ def main():
                                 )
                         else:
                             st.error("Unexpected output format from PDF processing")
-                            
+
                     else:
                         # Text file processing
                         st.success("✅ File processed successfully!")
                         st.subheader("📄 Processing Output:")
-                        
+
                         # Handle different output types
                         if isinstance(output, pd.DataFrame):
                             st.dataframe(output)
@@ -135,7 +155,7 @@ def main():
                             st.json(output)
                         else:
                             st.text_area("Text output", output, height=300)
-                            
+
                         # Download button for processed output
                         if isinstance(output, str):
                             st.download_button(
@@ -144,7 +164,7 @@ def main():
                                 file_name=f"processed_{uploaded_file.name}.txt",
                                 mime="text/plain"
                             )
-                
+
                 except Exception as e:
                     st.error(f"❌ Error processing file: {str(e)}")
                     st.write("Please check that your file is a valid PDF or text file and try again.")
