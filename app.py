@@ -30,15 +30,19 @@ def display_pdf_summaries(summaries):
             with tabs[i]:
                 data = summaries[section]
                 st.write("**Summary:**")
-                # Use st.text() instead of st.write() for plain text display
-                st.text(data['Summary'])
+
+                # st.text(data['Summary'])
+                formatted_summary = data['Summary'].replace('\n', '\n\n')
+                st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
     else:
         # Single section, display directly
         for section, data in summaries.items():
             st.write(f"### {data['Section']}")
             st.write("**Summary:**")
-            # Use st.text() instead of st.write() for plain text display
-            st.text(data['Summary'])
+
+            # st.text(data['Summary'])
+            formatted_summary = data['Summary'].replace('\n', '\n\n')  
+            st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
 
 def main():
     logo_path = os.path.join(os.path.dirname(__file__), "logo.png")

@@ -168,98 +168,169 @@ def extract_tables_and_sections(pdf_path):
     
     return sections
 
+def clean_and_align_text(text):
+    """Enhanced text cleaning and alignment function"""
+    if not text:
+        return text
+    
+    # Remove any leading/trailing whitespace
+    text = text.strip()
+    
+    # Remove markdown formatting artifacts
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)  # Remove bold
+    text = re.sub(r'\*(.*?)\*', r'\1', text)      # Remove italic
+    text = re.sub(r'`(.*?)`', r'\1', text)        # Remove code
+    text = re.sub(r'#{1,6}\s*(.*)', r'\1', text)  # Remove headers
+    text = re.sub(r'^[>\-\*\+\s]*', '', text, flags=re.MULTILINE)  # Remove leading symbols per line
+    
+    # Clean up bullet points and list formatting
+    text = re.sub(r'^\s*[-\*\+]\s*', '• ', text, flags=re.MULTILINE)  # Standardize bullets
+    text = re.sub(r'^\s*\d+\.\s*', lambda m: f"{m.group().strip()} ", text, flags=re.MULTILINE)  # Clean numbered lists
+    
+    # Fix spacing around currency and numbers
+    text = re.sub(r'\$\s*(\d)', r'$\1', text)  # Fix "$" spacing
+    text = re.sub(r'(\d)\s*%', r'\1%', text)   # Fix "%" spacing
+    text = re.sub(r'(\d),\s*(\d{3})', r'\1,\2', text)  # Fix comma separators
+    
+    # Normalize whitespace while preserving paragraph breaks
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        # Clean each line individually
+        line = re.sub(r'\s+', ' ', line.strip())
+        
+        # Skip empty lines but preserve intentional paragraph breaks
+        if line or (cleaned_lines and cleaned_lines[-1]):
+            cleaned_lines.append(line)
+    
+    # Join lines back together, preserving paragraph structure
+    text = '\n'.join(cleaned_lines)
+    
+    # Remove excessive line breaks (more than 2 consecutive)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Ensure sentences end with proper punctuation
+    text = re.sub(r'([a-zA-Z0-9])\s*$', r'\1.', text, flags=re.MULTILINE)
+    
+    return text.strip()
+
+
+def format_summary_for_display(summary_text, section_name):
+    """Format summary text specifically for clean display"""
+    
+    # Apply base cleaning
+    formatted_text = clean_and_align_text(summary_text)
+    
+    # Section-specific formatting
+    if section_name.lower() in ['dividends', 'transactions', 'positions']:
+        # For financial sections, ensure currency amounts are properly formatted
+        formatted_text = re.sub(r'\$(\d+(?:,\d{3})*(?:\.\d{2})?)', r'$\1', formatted_text)
+        
+        # Standardize percentage formatting
+        formatted_text = re.sub(r'(\d+(?:\.\d+)?)\s*%', r'\1%', formatted_text)
+    
+    # Split into sentences for better readability
+    sentences = re.split(r'(?<=[.!?])\s+', formatted_text)
+    
+    # Clean each sentence
+    clean_sentences = []
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if sentence and len(sentence) > 3:  # Skip very short fragments
+            # Ensure proper capitalization
+            sentence = sentence[0].upper() + sentence[1:] if len(sentence) > 1 else sentence.upper()
+            clean_sentences.append(sentence)
+    
+    # Rejoin with consistent spacing
+    return ' '.join(clean_sentences)
+
+
 def clean_ai_response(response_text):
-    """Clean AI response to remove unwanted formatting"""
+    """Enhanced AI response cleaning with better alignment"""
     if not response_text:
         return response_text
     
-    # Remove any markdown formatting that might cause issues
-    response_text = re.sub(r'\*\*(.*?)\*\*', r'\1', response_text)  # Remove bold
-    response_text = re.sub(r'\*(.*?)\*', r'\1', response_text)      # Remove italic
-    response_text = re.sub(r'`(.*?)`', r'\1', response_text)        # Remove code
-    response_text = re.sub(r'#{1,6}\s*(.*)', r'\1', response_text)  # Remove headers
+    # Remove common AI artifacts
+    response_text = re.sub(r'^(Here\'s|Here is|Based on|According to).*?[:\.]?\s*', '', response_text, flags=re.IGNORECASE)
+    response_text = re.sub(r'(In summary|To summarize|In conclusion)[:\.]?\s*', '', response_text, flags=re.IGNORECASE)
     
-    # Ensure proper spacing around numbers and currency
-    response_text = re.sub(r'(\$\d+(?:,\d{3})*(?:\.\d{2})?)', r' \1 ', response_text)
-    response_text = re.sub(r'\s+', ' ', response_text)
+    # Apply standard cleaning
+    response_text = clean_and_align_text(response_text)
+    
+    # Remove any remaining formatting artifacts
+    response_text = re.sub(r'^\s*[>\-\*\+]\s*', '', response_text, flags=re.MULTILINE)
+    response_text = re.sub(r'\s+([.!?])', r'\1', response_text)  # Fix punctuation spacing
+    
+    # Ensure proper sentence structure
+    response_text = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', response_text)
     
     return response_text.strip()
 
-def call_llama_bedrock(prompt, system_prompt="", model_arn=None):
-    """Call AWS Bedrock Llama model with given prompt"""
+
+# Updated system prompt for better consistency
+SYSTEM_PROMPT_TEMPLATE = """You are a professional financial analyst. Provide clear, well-structured summaries of brokerage statement sections.
+
+FORMATTING REQUIREMENTS:
+- Write in complete, properly punctuated sentences
+- Use consistent spacing and formatting
+- Start each summary with the most important information
+- Use specific numbers, dates, and amounts when available
+- Do NOT use quotation marks, asterisks, or markdown formatting
+- Do NOT start responses with introductory phrases
+- Keep responses focused and factual
+- Ensure proper spacing around currency amounts (e.g., $1,234.56)
+
+CONTENT FOCUS:
+- Highlight key financial metrics and changes
+- Include specific dollar amounts and percentages when relevant  
+- Mention important dates and time periods
+- Provide context for significant changes or activity"""
+
+
+def call_llama_bedrock(prompt, section_name, model_arn=None):
+    """Enhanced Bedrock call with better formatting controls"""
     
-    # Get model ARN from environment or use provided one
     if model_arn is None:
         model_arn = os.getenv("BEDROCK_MODEL_ID")
         if not model_arn:
             return "Error: BEDROCK_MODEL_ID not set in environment variables"
     
-    # Validate that it's a Llama model
     if "llama" not in model_arn.lower():
         return f"Error: Expected Llama model, got {model_arn}"
     
     try:
-        # Construct Llama 3 format prompt with clear instructions
-        if system_prompt:
-            formatted_prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
-        else:
-            formatted_prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
+        # Use the enhanced system prompt
+        formatted_prompt = f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{SYSTEM_PROMPT_TEMPLATE}<|eot_id|><|start_header_id|>user<|end_header_id|>\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
         
-        # Prepare request body for Llama with increased token limit
+        # Optimized parameters for cleaner output
         body = {
             "prompt": formatted_prompt,
-            "max_gen_len": 400,  # Increased from 300
-            "temperature": 0.1,  # Lower temperature for more focused responses
-            "top_p": 0.7        # Slightly lower for more focused responses
+            "max_gen_len": 500,      # Increased for complete responses
+            "temperature": 0.05,     # Very low for consistency
+            "top_p": 0.6,           # Focused responses
         }
         
-        # Call Bedrock
         response = client.invoke_model(
             modelId=model_arn,
             body=json.dumps(body),
             contentType="application/json"
         )
         
-        # Parse response
         response_body = json.loads(response['body'].read())
-        
-        # Extract text from Llama response
         generated_text = response_body.get('generation', '')
         
         if generated_text:
-            # Clean up the response
-            clean_text = generated_text.strip()
+            # Apply enhanced cleaning
+            clean_text = clean_ai_response(generated_text)
             
-            # Remove any leading '>' characters
-            while clean_text.startswith('>'):
-                clean_text = clean_text[1:].strip()
+            # Apply section-specific formatting
+            formatted_text = format_summary_for_display(clean_text, section_name)
             
-            # Remove any trailing incomplete sentences if text was truncated
-            if len(clean_text) > 10:
-                # If text doesn't end with proper punctuation and seems truncated
-                if not clean_text.endswith(('.', '!', '?', ':')) and len(clean_text) > 500:
-                    # Find the last complete sentence
-                    last_period = clean_text.rfind('.')
-                    last_exclamation = clean_text.rfind('!')
-                    last_question = clean_text.rfind('?')
-                    
-                    last_punct = max(last_period, last_exclamation, last_question)
-                    
-                    if last_punct > len(clean_text) * 0.7:  # If we have at least 70% of the text
-                        clean_text = clean_text[:last_punct + 1]
-            
-            return clean_text
+            return formatted_text
         else:
             return "No response generated"
             
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'ValidationException' and 'inference profile' in str(e):
-            return f"Error: Model {model_arn} requires inference profile setup. Please use the correct inference profile ARN from your Bedrock console."
-        elif error_code == 'AccessDeniedException':
-            return f"Error: Access denied to model {model_arn}. Please check model access permissions in Bedrock console."
-        else:
-            return f"AWS Bedrock error: {str(e)}"
     except Exception as e:
         return f"Error calling Bedrock: {str(e)}"
 
