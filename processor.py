@@ -493,3 +493,24 @@ def process_file(uploaded_file):
     
     else:
         return f"Unsupported file type: {uploaded_file.type}"
+    
+    # File statistics (for text files)
+    content = uploaded_file.read().decode("utf-8")
+    lines = content.splitlines()
+    words = re.findall(r'\w+', content)
+    allContent = content
+    
+    stats = {
+        'lines': len(lines),
+        'words': len(words),
+        'characters': len(allContent)
+    }
+    # Orange theme for stats output
+    stats_html = '<div class="file-details-title" style="margin-bottom:0.3rem;">File Statistics:</div>'
+    stats_html += '<ul style="padding-left:1.2em; margin:0;">'
+    for key, value in stats.items():
+        stats_html += f'<li style="margin-bottom:0.1rem;"><span class="file-detail-key">{key.capitalize()}</span>: <span class="file-detail-value">{value}</span></li>'
+    stats_html += '</ul>'
+    st.markdown(stats_html, unsafe_allow_html=True)
+    preview = content[:500] + ('...' if len(content) > 500 else '')
+    return preview
