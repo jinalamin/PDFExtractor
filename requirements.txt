@@ -7,3 +7,4 @@ openai
 PyPDF2
 boto3
 fitz
+pdfplumber
