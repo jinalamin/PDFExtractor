@@ -33,7 +33,8 @@ def display_pdf_summaries(summaries):
 
                 # st.text(data['Summary'])
                 formatted_summary = data['Summary'].replace('\n', '\n\n')
-                st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
+                #st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
+                st.write(formatted_summary)
     else:
         # Single section, display directly
         for section, data in summaries.items():
@@ -41,8 +42,9 @@ def display_pdf_summaries(summaries):
             st.write("**Summary:**")
 
             # st.text(data['Summary'])
-            formatted_summary = data['Summary'].replace('\n', '\n\n')  
-            st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
+            formatted_summary = data['Summary'].replace('\n', '\n\n')
+            st.write(formatted_summary)
+            #st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
 
 def main():
     logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
@@ -69,7 +71,7 @@ def main():
         )
     st.title("📄 Brokerage Statement Summary")
     #st.write("Upload a PDF brokerage statement to get an AI-powered summary of key sections")
-    st.markdown('<span style="color: #FFA500; font-weight: bold; font-size: 1.1rem;">Upload a PDF brokerage statement to get an AI-powered summary of key sections</span>', unsafe_allow_html=True)
+    st.markdown('<span style="color: #FF7300; font-weight: bold; font-size: 1.1rem;">Upload a PDF brokerage statement to get an AI-powered summary of key sections</span>', unsafe_allow_html=True)
 
     # Add some styling
     st.markdown("""
@@ -78,6 +80,18 @@ def main():
         font-size: 16px;
         font-weight: bold;
     }
+    /* Apply color only to the selected tab */
+    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
+    color: #FF7300 !important;
+    font-weight: bold;
+}   
+   
+    
+    # .st-emotion-cache-bfgnao {
+    # font-family: "Source Sans", sans-serif;
+    # font-size: 0.875rem;
+    # color: #FF7300 !important;
+    # }
     
      /* File details */
         .file-details-title {
@@ -128,7 +142,7 @@ def main():
             "File size": f"{uploaded_file.size} bytes"
         }
         for key, value in file_details.items():
-            st.markdown(f'<li style="margin-bottom:0.1rem;"><span class="file-detail-key">{key.capitalize()}</span>: <span class="file-detail-value">{value}</span></li>', unsafe_allow_html=True)
+            st.markdown(f'<li style="margin-bottom:0.1rem;"><span class="file-detail-key">{key.capitalize()}</span>: <span>{value}</span></li>', unsafe_allow_html=True)
         st.markdown('</ul>', unsafe_allow_html=True)
         # Process button
         if st.button("🚀 Process File", type="primary"):
