@@ -15,7 +15,7 @@ st.set_page_config(
 
 def display_pdf_summaries(summaries):
     """Display PDF summaries in a nice format"""
-    st.subheader("📊 Brokerage Statement Summary")
+    st.subheader("📊 Key Takeaways")
 
     if "error" in summaries:
         st.error(summaries["error"])
@@ -68,7 +68,8 @@ def main():
             unsafe_allow_html=True
         )
     st.title("📄 Brokerage Statement Summary")
-    st.write("Upload a PDF brokerage statement to get an AI-powered summary of key sections")
+    #st.write("Upload a PDF brokerage statement to get an AI-powered summary of key sections")
+    st.markdown('<span style="color: #FFA500; font-weight: bold; font-size: 1.1rem;">Upload a PDF brokerage statement to get an AI-powered summary of key sections</span>', unsafe_allow_html=True)
 
     # Add some styling
     st.markdown("""
@@ -77,6 +78,37 @@ def main():
         font-size: 16px;
         font-weight: bold;
     }
+    
+     /* File details */
+        .file-details-title {
+            color: #FF7300;
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-top: 1.2rem;
+        }
+        .file-detail-key {
+            color: #FFA500;
+            font-weight: 600;
+        }
+        .file-detail-value {
+            color: #181818;
+        }
+        /* Buttons */
+        .stButton>button, .stDownloadButton>button {
+            background: linear-gradient(90deg, #FFA500 0%, #FF7300 100%) !important;
+            color: #fff !important;
+            border-radius: 10px !important;
+            font-weight: 600 !important;
+            font-size: 1.08rem !important;
+            padding: 0.6rem 2rem !important;
+            border: none !important;
+            box-shadow: 0 2px 8px rgba(255,140,0,0.10) !important;
+            transition: background 0.2s, box-shadow 0.2s !important;
+        }
+        .stButton>button:hover, .stDownloadButton>button:hover {
+            background: linear-gradient(90deg, #FF7300 0%, #FFA500 100%) !important;
+            color: #fff !important;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -86,6 +118,7 @@ def main():
         type=["txt", "pdf"],
         help="Upload a PDF brokerage statement or text file for processing"
     )
+
 
     if uploaded_file is not None:
         st.markdown('<div class="file-details-title">File Details:</div>', unsafe_allow_html=True)
