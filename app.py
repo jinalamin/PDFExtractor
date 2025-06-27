@@ -107,6 +107,16 @@ def main():
         .file-detail-value {
             color: #181818;
         }
+        textarea {
+    background-color: #1E1E1E; /* Dark background for dark mode */
+    color: #FFFFFF; /* White text for visibility */
+    border: 1px solid #FFA500; /* Optional: Add a border for better visibility */
+    border-radius: 8px; /* Rounded corners */
+    padding: 10px; /* Add some padding */
+    font-size: 1rem; /* Adjust font size */
+    font-family: "Source Sans", sans-serif; /* Consistent font */
+    resize: none; /* Disable resizing if not needed */
+}
         /* Buttons */
         .stButton>button, .stDownloadButton>button {
             background: linear-gradient(90deg, #FFA500 0%, #FF7300 100%) !important;
