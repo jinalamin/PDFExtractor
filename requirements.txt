@@ -2,4 +2,9 @@ streamlit
 pandas
 numpy
 openpyxl
+dotenv
+openai
+PyPDF2
+boto3
+fitz
 pdfplumber
