@@ -47,7 +47,7 @@ def display_pdf_summaries(summaries):
             #st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
 
 def main():
-    logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+    logo_path = os.path.join(os.path.dirname(__file__), "straditLogo.png")
     if os.path.exists(logo_path):
         import base64
         from io import BytesIO
