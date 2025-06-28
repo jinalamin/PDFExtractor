@@ -33,8 +33,7 @@ def display_pdf_summaries(summaries):
 
                 # st.text(data['Summary'])
                 formatted_summary = data['Summary'].replace('\n', '\n\n')
-                #st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
-                st.write(formatted_summary)
+                st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
     else:
         # Single section, display directly
         for section, data in summaries.items():
@@ -43,9 +42,7 @@ def display_pdf_summaries(summaries):
 
             # st.text(data['Summary'])
             formatted_summary = data['Summary'].replace('\n', '\n\n')
-            st.write(formatted_summary)
-            #st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
-
+            st.markdown(f"<div style='text-align: justify; line-height: 1.6; padding: 10px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #dd511d;'>{formatted_summary}</div>", unsafe_allow_html=True)
 def main():
     logo_path = os.path.join(os.path.dirname(__file__), "straditLogo.png")
     if os.path.exists(logo_path):
