@@ -10,7 +10,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv('/etc/environment')
 
 # Initialize AWS Bedrock client
 def get_bedrock_client():
